@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>周波数特性アナライザ — Sweep FR Meter</title>
+<style>
+  :root{
+    --bg:#0E141B;
+    --panel:#161E27;
+    --panel2:#1C2632;
+    --line:#2A3645;
+    --ink:#D8E2EC;
+    --ink-dim:#7E8FA3;
+    --trace:#56C8AC;       /* 現在の測定 */
+    --trace-noise:#54637A; /* ノイズフロア */
+    --danger:#E06C5B;
+    --accent:#E0A458;
+    --mono:"SF Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:14px; line-height:1.55;
+    padding-bottom:48px;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:16px 14px;}
+
+  header{display:flex; align-items:baseline; gap:10px; margin:6px 2px 14px;}
+  header h1{font-size:17px; margin:0; font-weight:700; letter-spacing:.02em;}
+  header .ver{font-family:var(--mono); font-size:11px; color:var(--ink-dim);}
+
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px;}
+  .panel h2{font-size:11px; font-weight:600; letter-spacing:.14em; color:var(--ink-dim); margin:0 0 10px; text-transform:uppercase;}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px;}
+  .field label{display:block; font-size:11px; color:var(--ink-dim); margin-bottom:4px;}
+  .field input,.field select{
+    width:100%; background:var(--panel2); color:var(--ink);
+    border:1px solid var(--line); border-radius:6px; padding:8px 9px;
+    font-family:var(--mono); font-size:14px;
+  }
+  .field input:focus,.field select:focus{outline:2px solid var(--trace); outline-offset:-1px;}
+
+  .runrow{display:flex; gap:10px; align-items:stretch; margin-bottom:12px;}
+  button{
+    font-family:var(--sans); font-weight:700; font-size:15px;
+    border:none; border-radius:10px; padding:14px 18px; cursor:pointer;
+    color:#0B1117; background:var(--trace);
+  }
+  button:disabled{opacity:.45; cursor:default;}
+  button.secondary{
+    background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    font-weight:600; font-size:13px; padding:9px 12px;
+  }
+  button.secondary.active{border-color:var(--accent); color:var(--accent);}
+  #btnRun{flex:1;}
+  #btnStop{background:var(--danger); color:#fff; display:none;}
+
+  /* 計測ステータス */
+  #status{
+    display:none; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:14px; margin-bottom:12px;
+  }
+  #statusLine{font-size:12px; color:var(--ink-dim); margin-bottom:6px;}
+  #freqReadout{
+    font-family:var(--mono); font-size:42px; font-weight:600; line-height:1.05;
+    color:var(--trace); font-variant-numeric:tabular-nums;
+  }
+  #freqReadout small{font-size:16px; color:var(--ink-dim); margin-left:4px;}
+  .meterTrack{height:6px; background:var(--panel2); border-radius:3px; margin-top:10px; overflow:hidden;}
+  .meterFill{height:100%; width:0%; background:var(--trace); border-radius:3px;}
+  #levelFill{background:var(--accent);}
+  .meterLabel{font-size:10px; color:var(--ink-dim); margin-top:3px; font-family:var(--mono);}
+
+  #chartBox{position:relative;}
+  canvas#chart{width:100%; height:340px; display:block; border-radius:8px; background:#0B1016; border:1px solid var(--line); touch-action:none;}
+  #cursorInfo{
+    position:absolute; top:8px; right:10px; font-family:var(--mono); font-size:12px;
+    color:var(--ink); background:rgba(14,20,27,.85); border:1px solid var(--line);
+    padding:4px 8px; border-radius:6px; pointer-events:none; display:none;
+  }
+  .toolrow{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+
+  /* 比較リスト */
+  #saveList{margin-top:4px;}
+  .saveRow{
+    display:flex; align-items:center; gap:9px;
+    padding:7px 4px; border-bottom:1px solid var(--line); font-size:13px;
+  }
+  .saveRow:last-child{border-bottom:none;}
+  .swatch{width:14px; height:4px; border-radius:2px; flex:none;}
+  .saveRow .name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:12px;}
+  .saveRow .name.hidden{color:var(--ink-dim); text-decoration:line-through;}
+  .miniBtn{
+    background:var(--panel2); border:1px solid var(--line); color:var(--ink-dim);
+    border-radius:6px; font-size:11px; padding:4px 8px; cursor:pointer; font-weight:600; flex:none;
+  }
+  .miniBtn.on{color:var(--accent); border-color:var(--accent);}
+  .miniBtn.del{color:var(--danger);}
+  #emptyList{font-size:12px; color:var(--ink-dim); padding:4px 2px;}
+
+  #msg{font-size:12px; color:var(--ink-dim); margin:8px 2px; min-height:1.2em; font-family:var(--mono);}
+  #msg.err{color:var(--danger);}
+
+  .notes{font-size:12px; color:var(--ink-dim); padding-left:18px;}
+  .notes li{margin-bottom:6px;}
+  .notes b{color:var(--ink); font-weight:600;}
+  details summary{cursor:pointer; font-size:12px; color:var(--ink-dim);}
+  details summary b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>周波数特性アナライザ</h1>
+    <span class="ver">ESS sweep / FDW deconvolution</span>
+  </header>
+
+  <div class="panel">
+    <h2>測定条件</h2>
+    <div class="grid">
+      <div class="field">
+        <label>開始周波数 [Hz]</label>
+        <input type="number" id="f1" value="20" min="1" step="1">
+      </div>
+      <div class="field">
+        <label>終了周波数 [Hz]</label>
+        <input type="number" id="f2" value="15000" min="100" step="100">
+      </div>
+      <div class="field">
+        <label>スイープ長 [秒]</label>
+        <select id="dur">
+          <option value="3">3(簡易)</option>
+          <option value="5">5(標準)</option>
+          <option value="10" selected>10(低域重視)</option>
+          <option value="20">20(最高S/N)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>同期平均回数</label>
+        <select id="avg">
+          <option value="1">1回</option>
+          <option value="2" selected>2回</option>
+          <option value="4">4回(高ノイズ環境)</option>
+          <option value="8">8回</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>出力レベル [dBFS]</label>
+        <select id="outLevel">
+          <option value="-24">-24</option>
+          <option value="-18">-18</option>
+          <option value="-12" selected>-12</option>
+          <option value="-6">-6</option>
+          <option value="0">0(最大)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>解析窓</label>
+        <select id="win">
+          <option value="fdw15" selected>周波数依存 15周期(推奨)</option>
+          <option value="fdw8">周波数依存 8周期(反射多い部屋)</option>
+          <option value="fdw30">周波数依存 30周期(高分解能)</option>
+          <option value="g10">固定ゲート 10 ms</option>
+          <option value="g50">固定ゲート 50 ms</option>
+          <option value="g200">固定ゲート 200 ms</option>
+          <option value="g500">固定ゲート 500 ms</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>スムージング</label>
+        <select id="smooth">
+          <option value="3">1/3 oct(最も滑らか)</option>
+          <option value="6" selected>1/6 oct</option>
+          <option value="12">1/12 oct</option>
+          <option value="24">1/24 oct(詳細)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>正規化</label>
+        <select id="norm">
+          <option value="1k" selected>1 kHz = 0 dB</option>
+          <option value="none">生レベル</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="runrow">
+    <button id="btnRun">測定開始</button>
+    <button id="btnStop">中止</button>
+  </div>
+
+  <div id="status">
+    <div id="statusLine">準備中…</div>
+    <div id="freqReadout">—<small>Hz</small></div>
+    <div class="meterTrack"><div class="meterFill" id="progFill"></div></div>
+    <div class="meterLabel">PROGRESS</div>
+    <div class="meterTrack"><div class="meterFill" id="levelFill"></div></div>
+    <div class="meterLabel">INPUT LEVEL <span id="levelDb">-∞ dBFS</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>周波数特性</h2>
+    <div id="chartBox">
+      <canvas id="chart"></canvas>
+      <div id="cursorInfo"></div>
+    </div>
+    <div class="toolrow">
+      <button class="secondary" id="btnSave" disabled>比較リストに追加</button>
+      <button class="secondary" id="btnDiff" disabled>基準との差分</button>
+      <button class="secondary" id="btnCsv" disabled>CSV書き出し</button>
+      <button class="secondary" id="btnClear" disabled>最新測定をクリア</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>比較リスト</h2>
+    <div id="saveList"><div id="emptyList">測定後に「比較リストに追加」すると、複数のカーブを重ねて比較できます。「基準」に設定したカーブとの差分表示も可能。</div></div>
+  </div>
+
+  <div class="panel">
+    <details>
+      <summary><b>低音がうまく測れないとき</b>(重要)</summary>
+      <ul class="notes">
+        <li><b>① 密着させる(効果最大):</b> イヤホンの音道をマイク穴に直接押し当てる。低音は開放空間だとイヤホンからほとんど放射されず、距離1cmでも20dB以上失われる。指やテープで隙間を塞いで「密閉カプラ」状態にすると本来の低域が出る。耳に装着した状態と同じく密閉が前提の設計だから。</li>
+        <li><b>② 手のひらカプラ:</b> イヤホンとマイクを片手で包み込み、空気室を作る。即席だが再現性を上げるならペットボトルのキャップ等の小容器にイヤホンを差し込み、容器の縁をマイク穴に当てる。</li>
+        <li><b>③ スイープ長を10〜20秒に:</b> ESSは低域に滞在する時間がS/Nに直結する。20秒スイープは3秒比で約8dB低域S/Nが改善。</li>
+        <li><b>④ 解析窓を「周波数依存」に:</b> 固定ゲート50msでは20Hz=1周期しか入らず低域が原理的に測れない。周波数依存窓なら低域は自動的に長い窓(20Hz×15周期=0.75秒)で解析される。</li>
+        <li><b>⑤ 静かな環境+平均2〜4回:</b> エアコン・換気扇・交通振動は全部低域ノイズ。グラフのグレー帯(S/N不足)が低域に出ているなら、結果ではなくノイズを見ている。</li>
+        <li><b>⑥ それでも20Hz付近が落ちる場合:</b> スマホ内蔵マイク自体のハイパスフィルタ(風切り対策で30〜100Hzにロールオフを持つ機種が多い)が原因。絶対値は諦め、同条件で測ったカーブ同士の<b>差分比較</b>に切り替えるとマイク特性がキャンセルされる。</li>
+      </ul>
+    </details>
+    <details>
+      <summary><b>グラフがギザギザになるとき</b></summary>
+      <ul class="notes">
+        <li><b>主原因は反射(コムフィルタ):</b> 机や壁からの反射音が直接音と干渉し、等間隔の山谷を作る。対策は ①イヤホンとマイクを密着させ反射の相対レベルを下げる ②机の上ではなく空中・布の上で測る ③解析窓「周波数依存 8周期」で反射成分を窓の外に追い出す。</li>
+        <li><b>ノイズ起因のギザギザ:</b> 高域に乗る不規則なギザギザはS/N不足。平均回数を増やす+出力レベルを上げる(クリップ警告が出ない範囲で)。</li>
+        <li><b>表示の問題なら:</b> スムージングを1/3 octに。測定し直さなくても再計算される。</li>
+        <li><b>毎回形が変わる場合:</b> 配置が動いている。テープ固定して2回測り、重なるか確認するのが基本。</li>
+      </ul>
+    </details>
+    <details>
+      <summary>基本的な使いかた・注意事項</summary>
+      <ul class="notes">
+        <li><b>セットアップ:</b> イヤホン片側をスマホ下部のマイク穴に密着固定→「測定開始」→マイク許可。</li>
+        <li><b>Bluetoothは非推奨。</b> 測定中HFP(通話モード)に切り替わり帯域が制限される。有線推奨。</li>
+        <li><b>イヤホンA/B比較:</b> Aを測定→「比較リストに追加」→「基準」に設定→Bを測定→「基準との差分」。マイク特性がキャンセルされ純粋な差が見える。</li>
+        <li><b>アンチノイズ機構:</b> ESS逆畳み込み(定常ノイズ・高調波歪みを時間軸で分離)/周波数依存窓/同期平均/ブラウザのAGC・NS・AEC無効化/ノイズフロア表示+S/N10dB未満帯域のグレー表示。</li>
+        <li><b>1Hz〜20Hzの結果は参考値。</b> マイク・イヤホンの物理限界。</li>
+      </ul>
+    </details>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+/* ================= ユーティリティ ================= */
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const dB = x => 20 * Math.log10(Math.max(x, 1e-12));
+function setMsg(t, err){ const m = $("msg"); m.textContent = t || ""; m.className = err ? "err" : ""; }
+
+const PALETTE = ["#E0A458","#7FA8E0","#C77FE0","#E07F9B","#9BD05E","#5EC4D0","#D0A75E","#A0E07F"];
+
+/* ================= FFT (radix-2, in-place) ================= */
+function fft(re, im, inv){
+  const n = re.length;
+  for(let i = 1, j = 0; i < n; i++){
+    let bit = n >> 1;
+    for(; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if(i < j){
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for(let len = 2; len <= n; len <<= 1){
+    const half = len >> 1;
+    const ang = (inv ? 2 : -2) * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    for(let i = 0; i < n; i += len){
+      let cr = 1, ci = 0;
+      for(let k = 0; k < half; k++){
+        const a = i + k, b = a + half;
+        const vr = re[b] * cr - im[b] * ci;
+        const vi = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi;
+        re[a] += vr;        im[a] += vi;
+        const nr = cr * wr - ci * wi;
+        ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+  if(inv){ for(let i = 0; i < n; i++){ re[i] /= n; im[i] /= n; } }
+}
+const nextPow2 = n => { let s = 1; while(s < n) s <<= 1; return s; };
+
+/* ================= スイープ生成 (Farina ESS) ================= */
+function buildSweep(f1, f2, T, sr, amp){
+  const n = Math.round(T * sr);
+  const L = T / Math.log(f2 / f1);
+  const sweep = new Float32Array(n);
+  for(let i = 0; i < n; i++){
+    sweep[i] = amp * Math.sin(2 * Math.PI * f1 * L * Math.expm1((i / sr) / L));
+  }
+  const fi = Math.min(Math.round(0.05 * sr), n >> 2);
+  const fo = Math.min(Math.round(0.02 * sr), n >> 2);
+  for(let i = 0; i < fi; i++) sweep[i]         *= 0.5 - 0.5 * Math.cos(Math.PI * i / fi);
+  for(let i = 0; i < fo; i++) sweep[n - 1 - i] *= 0.5 - 0.5 * Math.cos(Math.PI * i / fo);
+  const inv = new Float32Array(n);
+  for(let i = 0; i < n; i++){
+    inv[i] = sweep[n - 1 - i] * Math.exp(-(i / sr) / L);
+  }
+  return { sweep, inv, L };
+}
+
+/* ================= デコンボリューション ================= */
+async function deconvolve(rec, inv){
+  const size = nextPow2(rec.length + inv.length);
+  const ar = new Float64Array(size), ai = new Float64Array(size);
+  const br = new Float64Array(size), bi = new Float64Array(size);
+  ar.set(rec); br.set(inv);
+  await sleep(15); fft(ar, ai, false);
+  await sleep(15); fft(br, bi, false);
+  for(let i = 0; i < size; i++){
+    const r = ar[i] * br[i] - ai[i] * bi[i];
+    ai[i]   = ar[i] * bi[i] + ai[i] * br[i];
+    ar[i]   = r;
+  }
+  await sleep(15); fft(ar, ai, true);
+  return ar;
+}
+
+/* ================= 解析: 固定ゲート (FFT) ================= */
+function segmentSpectrum(seg, sr, minSize){
+  const size = Math.max(nextPow2(seg.length), minSize || 65536);
+  const re = new Float64Array(size), im = new Float64Array(size);
+  re.set(seg);
+  fft(re, im, false);
+  const half = size >> 1;
+  const mag = new Float64Array(half);
+  for(let i = 0; i < half; i++) mag[i] = Math.hypot(re[i], im[i]);
+  return { mag, binHz: sr / size };
+}
+
+function fixedGateCurves(ir, peak, sr, gateMs, fmin, fmax, pts){
+  const pre  = Math.round(0.003 * sr);
+  const post = Math.round(gateMs / 1000 * sr);
+  const s = Math.max(0, peak - pre);
+  const e = Math.min(ir.length, peak + post);
+  const seg = new Float64Array(e - s);
+  for(let i = 0; i < seg.length; i++) seg[i] = ir[s + i];
+  const fadeIn = Math.min(pre, seg.length >> 2);
+  for(let i = 0; i < fadeIn; i++) seg[i] *= 0.5 - 0.5 * Math.cos(Math.PI * i / fadeIn);
+  const fadeOut = Math.max(8, seg.length >> 2);
+  for(let i = 0; i < fadeOut; i++) seg[seg.length - 1 - i] *= 0.5 - 0.5 * Math.cos(Math.PI * i / fadeOut);
+  const spec = segmentSpectrum(seg, sr);
+
+  const nLen = seg.length;
+  let ns = peak + post + Math.round(0.15 * sr);
+  if(ns + nLen > ir.length) ns = Math.max(0, ir.length - nLen);
+  const nseg = new Float64Array(nLen);
+  for(let i = 0; i < nLen; i++) nseg[i] = ir[ns + i] || 0;
+  const nspec = segmentSpectrum(nseg, sr, spec.mag.length * 2);
+
+  const m = binsToLog(spec.mag,  spec.binHz,  fmin, fmax, pts);
+  const n = binsToLog(nspec.mag, nspec.binHz, fmin, fmax, pts);
+  return { freqs: m.freqs, mag: m.out, noiseMag: n.out };
+}
+
+function binsToLog(mag, binHz, fmin, fmax, pts){
+  const freqs = new Float64Array(pts), out = new Float64Array(pts);
+  const r = Math.log(fmax / fmin), k = Math.pow(2, 1 / 96); // 1/48oct集約
+  for(let p = 0; p < pts; p++){
+    const f = fmin * Math.exp(r * p / (pts - 1));
+    freqs[p] = f;
+    let lo = Math.max(1, Math.floor(f / k / binHz));
+    let hi = Math.min(mag.length - 1, Math.ceil(f * k / binHz));
+    if(hi < lo) hi = lo;
+    let sum = 0, cnt = 0;
+    for(let b = lo; b <= hi; b++){ sum += mag[b] * mag[b]; cnt++; }
+    out[p] = Math.sqrt(sum / Math.max(cnt, 1));
+  }
+  return { freqs, out };
+}
+
+/* ================= 解析: 周波数依存窓 (FDW, 単一周波数DFT) ================= */
+function fdwCurves(ir, peak, sr, cycles, fmin, fmax, pts, segPre, segLen){
+  const freqs = new Float64Array(pts), mag = new Float64Array(pts), noiseMag = new Float64Array(pts);
+  const r = Math.log(fmax / fmin);
+  const maxPost = Math.round(0.8 * sr);                 // 窓後半の上限 0.8s
+  const noiseStart = peak + Math.round(0.85 * sr);      // ノイズ参照領域
+  const noiseAvail = Math.max(64, segLen - (noiseStart));
+
+  for(let p = 0; p < pts; p++){
+    const f = fmin * Math.exp(r * p / (pts - 1));
+    freqs[p] = f;
+    const postL = Math.min(Math.round(cycles / f * sr), maxPost);
+    const preL  = Math.min(Math.max(Math.round(postL / 8), Math.round(0.0015 * sr)), segPre);
+
+    mag[p] = singleFreqDFT(ir, peak, preL, postL, f, sr, segLen);
+
+    // ノイズ: 同じ窓長(取れる範囲)で後方領域を解析し、長さ差はパワー比例で補正
+    const used = Math.min(postL + preL, noiseAvail);
+    const nm = singleFreqDFT(ir, noiseStart + preL, preL, Math.max(16, used - preL), f, sr, segLen);
+    noiseMag[p] = nm * Math.sqrt((postL + preL) / Math.max(used, 1));
+  }
+  return { freqs, mag, noiseMag };
+}
+
+// 中心centerで値1、前preL・後postLをハーフコサインで落とす非対称窓の単一周波数DFT
+function singleFreqDFT(ir, center, preL, postL, f, sr, limit){
+  const w = 2 * Math.PI * f / sr;
+  const dc = Math.cos(w), ds = Math.sin(w);
+  let re = 0, im = 0;
+  // 位相回転を漸化式で(開始位相は窓先頭基準で十分: 大きさのみ使用)
+  let cr = 1, ci = 0;
+  const start = center - preL;
+  const total = preL + postL;
+  for(let i = 0; i < total; i++){
+    const idx = start + i;
+    let x = (idx >= 0 && idx < limit) ? ir[idx] : 0;
+    if(i < preL){
+      x *= 0.5 - 0.5 * Math.cos(Math.PI * i / preL);
+    }else{
+      const j = i - preL;
+      x *= 0.5 + 0.5 * Math.cos(Math.PI * j / postL);
+    }
+    re += x * cr; im -= x * ci;
+    const nr = cr * dc - ci * ds;
+    ci = cr * ds + ci * dc; cr = nr;
+  }
+  return Math.hypot(re, im);
+}
+
+/* 点列の1/Nオクターブ・パワー平均スムージング */
+function smoothCurve(mag, pts, fmin, fmax, oct){
+  const ptsPerOct = (pts - 1) / (Math.log(fmax / fmin) / Math.LN2);
+  const half = Math.max(0, Math.round(ptsPerOct / (2 * oct)));
+  if(half === 0) return mag;
+  const out = new Float64Array(pts);
+  for(let p = 0; p < pts; p++){
+    let sum = 0, cnt = 0;
+    const lo = Math.max(0, p - half), hi = Math.min(pts - 1, p + half);
+    for(let i = lo; i <= hi; i++){ sum += mag[i] * mag[i]; cnt++; }
+    out[p] = Math.sqrt(sum / cnt);
+  }
+  return out;
+}
+
+/* ================= オーディオ入出力 ================= */
+let actx = null, micStream = null, micSource = null, analyser = null;
+let workletReady = false;
+let captureNode = null, captureChunks = null;
+let abortFlag = false;
+
+async function ensureAudio(){
+  if(!actx){
+    actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "playback" });
+  }
+  if(actx.state === "suspended") await actx.resume();
+  if(!micStream){
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1
+      }
+    });
+    micSource = actx.createMediaStreamSource(micStream);
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 2048;
+    micSource.connect(analyser);
+  }
+  if(!workletReady && actx.audioWorklet){
+    const src = 'class CapProc extends AudioWorkletProcessor{' +
+      'process(inputs){const c=inputs[0][0];if(c)this.port.postMessage(c.slice(0));return true;}}' +
+      'registerProcessor("cap-proc",CapProc);';
+    try{
+      await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([src], { type: "application/javascript" })));
+      workletReady = true;
+    }catch(e){ workletReady = false; }
+  }
+}
+
+function startCapture(){
+  captureChunks = [];
+  if(workletReady){
+    captureNode = new AudioWorkletNode(actx, "cap-proc");
+    captureNode.port.onmessage = ev => captureChunks.push(ev.data);
+    micSource.connect(captureNode);
+    captureNode.connect(actx.destination); // 出力は書かないので無音(processを駆動するため)
+  }else{
+    captureNode = actx.createScriptProcessor(4096, 1, 1);
+    captureNode.onaudioprocess = ev => captureChunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+    micSource.connect(captureNode);
+    captureNode.connect(actx.destination);
+  }
+}
+function stopCapture(){
+  if(captureNode){
+    try{ micSource.disconnect(captureNode); }catch(e){}
+    try{ captureNode.disconnect(); }catch(e){}
+    if(captureNode.port) captureNode.port.onmessage = null;
+    captureNode = null;
+  }
+  let total = 0;
+  for(const c of captureChunks) total += c.length;
+  const rec = new Float32Array(total);
+  let o = 0;
+  for(const c of captureChunks){ rec.set(c, o); o += c.length; }
+  captureChunks = null;
+  return rec;
+}
+
+/* ================= 状態 ================= */
+const state = {
+  result: null,        // 最新測定 {freqs, db, noiseDb, fmin, fmax}
+  lastIRinfo: null,    // 再計算用 {ir, peak, sr, f1, f2, segPre, segLen}
+  saved: [],           // [{name, color, freqs, db, fmin, fmax, visible}]
+  refId: -1,           // 差分の基準 (saved index)
+  diffMode: false,
+  nextColor: 0,
+  measureCount: 0
+};
+
+/* ================= 測定シーケンス ================= */
+async function runMeasurement(){
+  abortFlag = false;
+  const f1 = Math.max(1, parseFloat($("f1").value) || 20);
+  let   f2 = parseFloat($("f2").value) || 15000;
+  const T  = parseFloat($("dur").value);
+  const N  = parseInt($("avg").value);
+  const amp = Math.pow(10, parseFloat($("outLevel").value) / 20);
+
+  setUiRunning(true);
+  setMsg("");
+  try{
+    await ensureAudio();
+    const sr = actx.sampleRate;
+    f2 = Math.min(f2, sr / 2 - 500);
+    if(f1 >= f2) throw new Error("開始周波数が終了周波数以上です");
+    if(f1 < 10) setMsg("注: " + f1 + "Hz開始 — 20Hz未満はマイク/イヤホンの物理限界でほぼ測定不能です");
+
+    const { sweep, inv, L } = buildSweep(f1, f2, T, sr, amp);
+    const preRoll = 0.4, postRoll = 1.2;
+
+    const segPre = Math.round(0.1 * sr);
+    const segLen = segPre + Math.round(1.6 * sr);
+    let irAcc = null, clipWarned = false;
+
+    for(let run = 0; run < N; run++){
+      if(abortFlag) throw new Error("中止しました");
+      $("statusLine").textContent = "スイープ再生中 (" + (run + 1) + "/" + N + ")";
+
+      startCapture();
+      await sleep(preRoll * 1000);
+
+      const buf = actx.createBuffer(1, sweep.length, sr);
+      buf.getChannelData(0).set(sweep);
+      const srcNode = actx.createBufferSource();
+      srcNode.buffer = buf;
+      srcNode.connect(actx.destination);
+      const t0 = actx.currentTime + 0.05;
+      srcNode.start(t0);
+
+      await animateSweep(t0, T, f1, L, run, N);
+      await sleep(postRoll * 1000);
+      const rec = stopCapture();
+
+      let peakIn = 0;
+      for(let i = 0; i < rec.length; i++){ const a = Math.abs(rec[i]); if(a > peakIn) peakIn = a; }
+      if(peakIn > 0.985 && !clipWarned){ setMsg("⚠ 入力クリップ検出 — 出力レベルを下げるかマイクから離してください", true); clipWarned = true; }
+      if(peakIn < 0.001) throw new Error("入力信号がほぼ無音です。マイク許可と音量を確認してください");
+
+      $("statusLine").textContent = "解析中 (デコンボリューション " + (run + 1) + "/" + N + ")…";
+      $("freqReadout").innerHTML = "FFT<small>&nbsp;</small>";
+      const ir = await deconvolve(rec, inv);
+
+      let peak = 0, pv = 0;
+      for(let i = 0; i < ir.length; i++){ const a = Math.abs(ir[i]); if(a > pv){ pv = a; peak = i; } }
+
+      if(!irAcc) irAcc = new Float64Array(segLen);
+      for(let i = 0; i < segLen; i++){
+        const idx = peak - segPre + i;
+        irAcc[i] += (idx >= 0 && idx < ir.length) ? ir[idx] : 0;
+      }
+    }
+    for(let i = 0; i < irAcc.length; i++) irAcc[i] /= N;
+
+    state.lastIRinfo = { ir: irAcc, peak: segPre, sr, f1, f2, segPre, segLen };
+    state.measureCount++;
+    recomputeCurves();
+    if(!$("msg").textContent){
+      setMsg("測定完了 #" + state.measureCount + " — SR " + sr + "Hz / 平均" + N + "回 / " + $("win").selectedOptions[0].textContent);
+    }
+  }catch(e){
+    setMsg("エラー: " + e.message, true);
+  }finally{
+    setUiRunning(false);
+    drawChart();
+  }
+}
+
+function recomputeCurves(){
+  if(!state.lastIRinfo) return;
+  const { ir, peak, sr, f1, f2, segPre, segLen } = state.lastIRinfo;
+  const mode = $("win").value;
+  const oct = parseInt($("smooth").value);
+  const fmin = Math.max(f1, 10), fmax = f2;
+  const pts = 480;
+
+  let c;
+  if(mode.startsWith("fdw")){
+    c = fdwCurves(ir, peak, sr, parseFloat(mode.slice(3)), fmin, fmax, pts, segPre, segLen);
+  }else{
+    c = fixedGateCurves(ir, peak, sr, parseFloat(mode.slice(1)), fmin, fmax, pts);
+  }
+  const mS = smoothCurve(c.mag, pts, fmin, fmax, oct);
+  const nS = smoothCurve(c.noiseMag, pts, fmin, fmax, oct);
+  const db = new Float64Array(pts), noiseDb = new Float64Array(pts);
+  for(let i = 0; i < pts; i++){ db[i] = dB(mS[i]); noiseDb[i] = dB(nS[i]); }
+
+  state.result = { freqs: c.freqs, db, noiseDb, fmin, fmax };
+  $("btnSave").disabled = $("btnCsv").disabled = $("btnClear").disabled = false;
+  updateDiffButton();
+}
+
+async function animateSweep(t0, T, f1, L, run, N){
+  const lvBuf = new Float32Array(analyser.fftSize);
+  return new Promise(resolve => {
+    function frame(){
+      const el = actx.currentTime - t0;
+      if(el >= T || abortFlag){ resolve(); return; }
+      if(el >= 0){
+        const f = f1 * Math.exp(el / L);
+        $("freqReadout").innerHTML =
+          (f < 1000 ? f.toFixed(1) : (f / 1000).toFixed(2) + "k") + "<small>Hz</small>";
+        $("progFill").style.width = (((run + el / T) / N) * 100).toFixed(1) + "%";
+      }
+      analyser.getFloatTimeDomainData(lvBuf);
+      let s = 0;
+      for(let i = 0; i < lvBuf.length; i++) s += lvBuf[i] * lvBuf[i];
+      const rms = dB(Math.sqrt(s / lvBuf.length));
+      $("levelFill").style.width = Math.max(0, Math.min(100, (rms + 60) / 60 * 100)) + "%";
+      $("levelDb").textContent = rms.toFixed(1) + " dBFS";
+      requestAnimationFrame(frame);
+    }
+    frame();
+  });
+}
+
+function setUiRunning(on){
+  $("btnRun").style.display = on ? "none" : "";
+  $("btnStop").style.display = on ? "" : "none";
+  $("status").style.display = on ? "" : "none";
+  for(const id of ["f1","f2","dur","avg","outLevel"]) $(id).disabled = on;
+}
+
+/* ================= 比較リスト ================= */
+function renderSaveList(){
+  const box = $("saveList");
+  box.innerHTML = "";
+  if(!state.saved.length){
+    box.innerHTML = '<div id="emptyList">測定後に「比較リストに追加」すると、複数のカーブを重ねて比較できます。「基準」に設定したカーブとの差分表示も可能。</div>';
+    return;
+  }
+  state.saved.forEach((sv, i) => {
+    const row = document.createElement("div");
+    row.className = "saveRow";
+
+    const sw = document.createElement("div");
+    sw.className = "swatch"; sw.style.background = sv.color;
+    row.appendChild(sw);
+
+    const nm = document.createElement("div");
+    nm.className = "name" + (sv.visible ? "" : " hidden");
+    nm.textContent = sv.name;
+    nm.title = "タップで名前変更";
+    nm.onclick = () => {
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.value = sv.name; inp.maxLength = 30;
+      inp.style.cssText = "flex:1;min-width:0;background:var(--panel2);color:var(--ink);" +
+        "border:1px solid var(--accent);border-radius:6px;padding:4px 7px;" +
+        "font-family:var(--mono);font-size:12px;";
+      const commit = () => {
+        const v = inp.value.trim();
+        if(v) sv.name = v.slice(0, 30);
+        renderSaveList(); drawChart();
+      };
+      inp.onblur = commit;
+      inp.onkeydown = e => { if(e.key === "Enter") inp.blur(); if(e.key === "Escape"){ inp.onblur = null; renderSaveList(); } };
+      row.replaceChild(inp, nm);
+      inp.focus(); inp.select();
+    };
+    row.appendChild(nm);
+
+    const vis = document.createElement("button");
+    vis.className = "miniBtn" + (sv.visible ? " on" : "");
+    vis.textContent = sv.visible ? "表示" : "非表示";
+    vis.onclick = () => { sv.visible = !sv.visible; renderSaveList(); drawChart(); };
+    row.appendChild(vis);
+
+    const ref = document.createElement("button");
+    ref.className = "miniBtn" + (state.refId === i ? " on" : "");
+    ref.textContent = "基準";
+    ref.onclick = () => {
+      state.refId = (state.refId === i) ? -1 : i;
+      if(state.refId < 0) state.diffMode = false;
+      updateDiffButton(); renderSaveList(); drawChart();
+    };
+    row.appendChild(ref);
+
+    const del = document.createElement("button");
+    del.className = "miniBtn del";
+    del.textContent = "✕";
+    del.onclick = () => {
+      state.saved.splice(i, 1);
+      if(state.refId === i){ state.refId = -1; state.diffMode = false; }
+      else if(state.refId > i) state.refId--;
+      updateDiffButton(); renderSaveList(); drawChart();
+    };
+    row.appendChild(del);
+
+    box.appendChild(row);
+  });
+}
+
+function updateDiffButton(){
+  $("btnDiff").disabled = !(state.result && state.refId >= 0);
+  $("btnDiff").classList.toggle("active", state.diffMode);
+}
+
+/* ================= 描画 ================= */
+const chart = $("chart");
+const cinfo = $("cursorInfo");
+
+function normOffset(curve){
+  if($("norm").value !== "1k") return 0;
+  const v = interpDb(curve, 1000);
+  return (v == null) ? curve.db[curve.db.length >> 1] : v;
+}
+function interpDb(curve, f){
+  const { freqs, db } = curve;
+  if(f <= freqs[0]) return db[0];
+  if(f >= freqs[freqs.length - 1]) return db[db.length - 1];
+  let lo = 0, hi = freqs.length - 1;
+  while(hi - lo > 1){ const mid = (lo + hi) >> 1; (freqs[mid] <= f ? lo = mid : hi = mid); }
+  const t = Math.log(f / freqs[lo]) / Math.log(freqs[hi] / freqs[lo]);
+  return db[lo] + t * (db[hi] - db[lo]);
+}
+
+function buildDisplayCurves(){
+  const curves = [];
+  const r = state.result;
+  const ref = state.refId >= 0 ? state.saved[state.refId] : null;
+
+  if(state.diffMode && r && ref){
+    const off = normOffset(r), refOff = normOffset(ref);
+    const diff = new Float64Array(r.freqs.length);
+    for(let i = 0; i < diff.length; i++){
+      diff[i] = (r.db[i] - off) - (interpDb(ref, r.freqs[i]) - refOff);
+    }
+    curves.push({ freqs: r.freqs, db: diff, color: getCss("--trace"), w: 2, main: true, label: "差分" });
+    return curves;
+  }
+
+  // ノイズフロア(最新測定のみ)
+  let mainSnr = null;
+  if(r){
+    const off = normOffset(r);
+    const nDb = new Float64Array(r.freqs.length);
+    for(let i = 0; i < nDb.length; i++) nDb[i] = r.noiseDb[i] - off;
+    curves.push({ freqs: r.freqs, db: nDb, color: getCss("--trace-noise"), w: 1, dash: [4,4] });
+    mainSnr = nDb;
+  }
+  // 保存カーブ
+  for(const sv of state.saved){
+    if(!sv.visible) continue;
+    const off = normOffset(sv);
+    const d = new Float64Array(sv.freqs.length);
+    for(let i = 0; i < d.length; i++) d[i] = sv.db[i] - off;
+    curves.push({ freqs: sv.freqs, db: d, color: sv.color, w: 1.5 });
+  }
+  // 最新測定(最前面)
+  if(r){
+    const off = normOffset(r);
+    const m = new Float64Array(r.freqs.length);
+    for(let i = 0; i < m.length; i++) m[i] = r.db[i] - off;
+    curves.push({ freqs: r.freqs, db: m, color: getCss("--trace"), w: 2, main: true, snrRef: mainSnr, label: "測定" });
+  }
+  return curves;
+}
+
+function drawChart(cursorX){
+  const dpr = window.devicePixelRatio || 1;
+  const W = chart.clientWidth, H = 340;
+  chart.width = W * dpr; chart.height = H * dpr;
+  const g = chart.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, W, H);
+
+  const padL = 38, padR = 10, padT = 12, padB = 26;
+  const pw = W - padL - padR, ph = H - padT - padB;
+  const r = state.result;
+  let fmin = r ? r.fmin : 20, fmax = r ? r.fmax : 15000;
+  if(!r && state.saved.length){ fmin = state.saved[0].fmin; fmax = state.saved[0].fmax; }
+  const fx = f => padL + Math.log(f / fmin) / Math.log(fmax / fmin) * pw;
+
+  const curves = buildDisplayCurves();
+
+  // Y範囲: 主カーブ(なければ全カーブ)から決定
+  let yMin = -40, yMax = 15;
+  if(curves.length){
+    let lo = Infinity, hi = -Infinity;
+    const scan = curves.filter(c => c.main).concat(curves.filter(c => !c.dash));
+    for(const c of (scan.length ? [scan[0]] : curves)){
+      for(const v of c.db){ if(isFinite(v)){ lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+    }
+    yMin = Math.floor((lo - 6) / 5) * 5;
+    yMax = Math.ceil((hi + 4) / 5) * 5;
+    if(yMax - yMin < 20){ yMax += 10; yMin -= 10; }
+    if(yMax - yMin > 90) yMin = yMax - 90;
+  }
+  const fy = v => padT + (yMax - v) / (yMax - yMin) * ph;
+
+  // グリッド
+  g.font = "10px " + getCss("--mono");
+  g.strokeStyle = "#1B2531"; g.fillStyle = "#5C6B7E"; g.lineWidth = 1;
+  for(let dec = 1; dec <= 100000; dec *= 10){
+    for(const m of [1,2,5]){
+      const f = dec * m;
+      if(f < fmin || f > fmax) continue;
+      const x = fx(f);
+      g.beginPath(); g.moveTo(x, padT); g.lineTo(x, padT + ph); g.stroke();
+      const lbl = f >= 1000 ? (f / 1000) + "k" : "" + f;
+      g.fillText(lbl, x - g.measureText(lbl).width / 2, H - 10);
+    }
+  }
+  const step = (yMax - yMin) > 50 ? 10 : 5;
+  for(let v = yMin; v <= yMax; v += step){
+    const y = fy(v);
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(padL + pw, y); g.stroke();
+    g.fillText(v + "", 4, y + 3);
+  }
+  g.strokeStyle = "#2A3645";
+  g.strokeRect(padL, padT, pw, ph);
+
+  if(!curves.length){
+    g.fillStyle = "#46566A"; g.font = "13px " + getCss("--sans");
+    g.fillText("測定結果がここに表示されます", padL + 14, padT + ph / 2);
+    cinfo.style.display = "none";
+    return;
+  }
+
+  // S/N不足帯域(<10dB)のグレー塗り
+  const mc = curves.find(c => c.main);
+  if(mc && mc.snrRef){
+    g.fillStyle = "rgba(120,135,155,0.10)";
+    let runStart = -1;
+    for(let i = 0; i <= mc.freqs.length; i++){
+      const bad = i < mc.freqs.length && (mc.db[i] - mc.snrRef[i]) < 10;
+      if(bad && runStart < 0) runStart = i;
+      if(!bad && runStart >= 0){
+        g.fillRect(fx(mc.freqs[runStart]), padT, fx(mc.freqs[i - 1]) - fx(mc.freqs[runStart]) + 1, ph);
+        runStart = -1;
+      }
+    }
+  }
+
+  // 差分モードの0dB線
+  if(state.diffMode){
+    g.strokeStyle = "#56C8AC44"; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(padL, fy(0)); g.lineTo(padL + pw, fy(0)); g.stroke();
+  }
+
+  for(const c of curves){
+    g.beginPath();
+    g.strokeStyle = c.color; g.lineWidth = c.w;
+    g.setLineDash(c.dash || []);
+    let started = false;
+    for(let i = 0; i < c.freqs.length; i++){
+      const x = fx(c.freqs[i]);
+      const y = Math.max(padT - 30, Math.min(padT + ph + 30, fy(c.db[i])));
+      started ? g.lineTo(x, y) : (g.moveTo(x, y), started = true);
+    }
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  if(cursorX != null && cursorX > padL && cursorX < padL + pw && mc){
+    const f = fmin * Math.exp((cursorX - padL) / pw * Math.log(fmax / fmin));
+    g.strokeStyle = "#4E607599"; g.beginPath();
+    g.moveTo(cursorX, padT); g.lineTo(cursorX, padT + ph); g.stroke();
+    const v = interpDb({ freqs: mc.freqs, db: mc.db }, f);
+    cinfo.style.display = "";
+    cinfo.textContent = (f < 1000 ? f.toFixed(1) + " Hz" : (f / 1000).toFixed(2) + " kHz")
+                      + " / " + v.toFixed(1) + " dB" + (state.diffMode ? " (差分)" : "");
+  }else{
+    cinfo.style.display = "none";
+  }
+}
+function getCss(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+/* ================= イベント ================= */
+$("btnRun").addEventListener("click", runMeasurement);
+$("btnStop").addEventListener("click", () => { abortFlag = true; });
+
+$("btnSave").addEventListener("click", () => {
+  if(!state.result) return;
+  const defName = "測定 #" + state.measureCount;
+  state.saved.push({
+    name: defName,
+    color: PALETTE[state.nextColor++ % PALETTE.length],
+    freqs: Float64Array.from(state.result.freqs),
+    db: Float64Array.from(state.result.db),
+    fmin: state.result.fmin, fmax: state.result.fmax,
+    visible: true
+  });
+  if(state.saved.length === 1 && state.refId < 0) state.refId = 0;
+  updateDiffButton(); renderSaveList(); drawChart();
+  setMsg("「" + defName + "」を比較リストに追加(名前タップで変更可)");
+});
+
+$("btnDiff").addEventListener("click", () => {
+  state.diffMode = !state.diffMode;
+  updateDiffButton();
+  drawChart();
+});
+
+$("btnCsv").addEventListener("click", () => {
+  if(!state.result) return;
+  const r = state.result, off = normOffset(r);
+  const cols = state.saved.filter(s => s.visible);
+  let csv = "freq_hz,measured_db,noise_db";
+  for(const s of cols) csv += "," + s.name.replace(/[",\n]/g, "_") + "_db";
+  csv += "\n";
+  for(let i = 0; i < r.freqs.length; i++){
+    csv += r.freqs[i].toFixed(2) + "," + (r.db[i] - off).toFixed(2) + "," + (r.noiseDb[i] - off).toFixed(2);
+    for(const s of cols) csv += "," + (interpDb(s, r.freqs[i]) - normOffset(s)).toFixed(2);
+    csv += "\n";
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "freq_response_" + new Date().toISOString().slice(0,19).replace(/[:T]/g,"-") + ".csv";
+  a.click();
+});
+
+$("btnClear").addEventListener("click", () => {
+  state.result = null; state.lastIRinfo = null; state.diffMode = false;
+  $("btnSave").disabled = $("btnCsv").disabled = $("btnClear").disabled = true;
+  updateDiffButton();
+  setMsg("");
+  drawChart();
+});
+
+for(const id of ["win","smooth"]){
+  $(id).addEventListener("change", () => { recomputeCurves(); drawChart(); });
+}
+$("norm").addEventListener("change", () => drawChart());
+
+function cursorEv(ev){
+  const rect = chart.getBoundingClientRect();
+  const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+  drawChart(x);
+  if(ev.touches) ev.preventDefault();
+}
+chart.addEventListener("mousemove", cursorEv);
+chart.addEventListener("touchstart", cursorEv, { passive: false });
+chart.addEventListener("touchmove", cursorEv, { passive: false });
+chart.addEventListener("mouseleave", () => drawChart());
+chart.addEventListener("touchend", () => drawChart());
+
+window.addEventListener("resize", () => drawChart());
+renderSaveList();
+drawChart();
+</script>
+</body>
+</html>
