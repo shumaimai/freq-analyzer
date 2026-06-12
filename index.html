@@ -783,11 +783,22 @@ const cal = { ref: null, refName: "", curve: null, enabled: false };
 
 function parseRefText(text){
   const fs = [], ds = [];
-  for(const line of text.split(/\r?\n/)){
-    const t = line.trim().split(/[\s,;]+/);
-    if(t.length < 2) continue;
-    const f = parseFloat(t[0]), d = parseFloat(t[1]);
-    if(isFinite(f) && isFinite(d) && f >= 1 && f <= 40000){ fs.push(f); ds.push(d); }
+  // Wavelet / GraphicEQ形式: "GraphicEQ: 20 -3.4; 25 -3.1; ..."
+  const geq = text.match(/GraphicEQ:\s*([^\r\n]+)/i);
+  if(geq){
+    for(const pair of geq[1].split(";")){
+      const t = pair.trim().split(/\s+/);
+      if(t.length < 2) continue;
+      const f = parseFloat(t[0]), d = parseFloat(t[1]);
+      if(isFinite(f) && isFinite(d) && f >= 1 && f <= 40000){ fs.push(f); ds.push(d); }
+    }
+  }else{
+    for(const line of text.split(/\r?\n/)){
+      const t = line.trim().split(/[\s,;]+/);
+      if(t.length < 2) continue;
+      const f = parseFloat(t[0]), d = parseFloat(t[1]);
+      if(isFinite(f) && isFinite(d) && f >= 1 && f <= 40000){ fs.push(f); ds.push(d); }
+    }
   }
   if(fs.length < 8) return null;
   const idx = fs.map((_, i) => i).sort((a, b) => fs[a] - fs[b]);
