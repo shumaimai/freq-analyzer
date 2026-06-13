@@ -224,34 +224,36 @@
   </div>
 
   <div class="panel">
-    <h2>キャリブレーション(基準機による補正)</h2>
-    <div style="font-size:12px; color:var(--ink-dim); margin:0 0 10px;">
-      プロ測定データのあるイヤホンを「基準機」にして、マイク特性と治具の癖をまとめてキャンセルします。手順: ①基準機のプロ測定データ(freq, dB の2列テキスト/CSV)を読み込む → ②その基準機を<b style="color:var(--ink)">この治具で</b>測定 → ③「補正カーブを作成」。以後の測定すべてに補正が掛かります(端末に保存されます)。
+    <h2>マルチサンプル・キャリブレーション</h2>
+    <div style="font-size:12px; color:var(--ink-dim); margin:0 0 12px;">
+      複数のイヤホンで「自分の測定 ↔ 外部の正しいデータ」の差分を取り、それらを平均してマイク+カプラーの系統誤差だけを抽出します。台数が増えるほど信頼度が上がります。
     </div>
+
+    <div style="font-size:11px; color:var(--green); font-weight:700; letter-spacing:.08em; margin-bottom:8px;">STEP 1 — 基準データを選ぶ</div>
     <div class="toolrow" style="margin-top:0;">
       <label class="miniBtn" style="padding:9px 12px; cursor:pointer; font-size:13px;">基準データを読み込む<input type="file" id="refFile" accept=".csv,.txt,.tsv,.bin,.html,.htm,.json" multiple style="display:none;"></label>
-      <button class="secondary" id="btnMakeCal" disabled>補正カーブを作成</button>
-      <button class="secondary" id="btnCalToggle" disabled>補正 OFF</button>
-      <button class="secondary" id="btnCalClear" disabled>補正を削除</button>
       <button class="secondary" id="btnRefCsv" disabled>基準をCSV保存</button>
     </div>
-    <div id="calStatus" style="font-size:12px; color:var(--ink-dim); margin-top:8px; font-family:var(--mono);">基準データ: なし / 補正: 未作成</div>
     <div id="peqdbBox" style="display:none; margin-top:10px;">
-      <input type="text" id="peqSearch" placeholder="PEQdBの機種名で検索(例: zero 2)" style="width:100%; background:var(--panel2); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px 9px; font-size:13px;">
-      <div id="peqResults" style="max-height:230px; overflow-y:auto; margin-top:6px;"></div>
+      <input type="text" id="peqSearch" placeholder="PEQdB機種名で検索(例: zero 2)" style="width:100%; background:var(--panel2); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px 9px; font-size:13px;">
+      <div id="peqResults" style="max-height:200px; overflow-y:auto; margin-top:6px;"></div>
     </div>
-    <details style="margin-top:10px;">
-      <summary>PEQdBの測定データベースを使う方法</summary>
-      <ul class="notes" style="margin-top:8px;">
-        <li>PEQdB(peqdb.com)には複数の測定者によるプロ測定が収録されている。サーバーがクロスオリジン読込を許可していないため、<b>2ファイルを一度手元にダウンロードして</b>このアプリに読み込む方式をとる。</li>
-        <li>PCやTermuxで以下を実行(ブラウザで各URLを開いて保存でも可):<br>
-          <code style="font-family:var(--mono); font-size:11px;">curl -o graph-data.bin https://peqdb.com/data/graph-data.bin</code><br>
-          <code style="font-family:var(--mono); font-size:11px;">curl -o peqdb-index.html https://peqdb.com/studio/</code></li>
-        <li>「基準データを読み込む」で<b>2ファイルをまとめて選択</b>(binが測定値約19MB、htmlが機種索引)。検索ボックスが出るので機種名で検索→タップで基準に設定。</li>
-        <li>選んだ基準は「基準をCSV保存」で小さなCSVにできるので、次回からは19MBのbinなしでそのCSVだけ読み込めばよい。</li>
-        <li>データは各測定者の成果物。自分の測定環境の校正という個人利用に留め、binやデータの再配布はしないこと。</li>
-      </ul>
-    </details>
+    <div id="refStatus" style="font-size:12px; color:var(--ink-dim); margin-top:8px; font-family:var(--mono);">基準データ: なし</div>
+
+    <div style="font-size:11px; color:var(--green); font-weight:700; letter-spacing:.08em; margin:16px 0 8px;">STEP 2 — そのイヤホンを治具で測定 → サンプルに追加</div>
+    <div style="font-size:12px; color:var(--ink-dim); margin-bottom:8px;">先に上の「測定開始」で測定(平均回数4回推奨)。装着位置を変えて同じイヤホンを複数回追加すると、装着のばらつきも平均化できます。</div>
+    <button class="secondary" id="btnAddSample" disabled style="width:100%;">＋ 現在の測定を校正サンプルに追加</button>
+    <div id="sampleList" style="margin-top:10px;"></div>
+
+    <div style="font-size:11px; color:var(--green); font-weight:700; letter-spacing:.08em; margin:16px 0 8px;">STEP 3 — マスター補正を生成・適用</div>
+    <div class="toolrow" style="margin-top:0;">
+      <button class="secondary" id="btnBuildMaster" disabled>マスター補正を生成</button>
+      <button class="secondary" id="btnCalToggle" disabled>補正 OFF</button>
+      <button class="secondary" id="btnCalCsv" disabled>補正CSV保存</button>
+    </div>
+    <canvas id="calChart" style="width:100%; height:150px; display:block; margin-top:10px; border-radius:8px; background:#0B1016; border:1px solid var(--line);"></canvas>
+    <div id="calStatus" style="font-size:12px; color:var(--ink-dim); margin-top:8px; font-family:var(--mono);">補正: 未生成</div>
+  </div>
   </div>
 
   <div class="panel">
@@ -660,9 +662,9 @@ function recomputeCurves(){
   const rawDb = new Float64Array(pts), noiseDb = new Float64Array(pts);
   for(let i = 0; i < pts; i++){ rawDb[i] = dB(mS[i]); noiseDb[i] = dB(nS[i]); }
   const db = Float64Array.from(rawDb);
-  if(cal.curve && cal.enabled){
+  if(cal.master && cal.enabled){
     for(let i = 0; i < pts; i++){
-      const k = interpDb(cal.curve, c.freqs[i]);
+      const k = interpDb(cal.master, c.freqs[i]);
       db[i] += k; noiseDb[i] += k;
     }
   }
@@ -778,8 +780,20 @@ function updateDiffButton(){
   $("btnDiff").classList.toggle("active", state.diffMode);
 }
 
-/* ================= キャリブレーション ================= */
-const cal = { ref: null, refName: "", curve: null, enabled: false };
+/* ================= キャリブレーション(マルチサンプル) ================= */
+const MASTER_PTS = 480, MASTER_FMIN = 20, MASTER_FMAX = 20000;
+const MASTER_FREQS = (() => {
+  const a = new Float64Array(MASTER_PTS), r = Math.log(MASTER_FMAX / MASTER_FMIN);
+  for(let i = 0; i < MASTER_PTS; i++) a[i] = MASTER_FMIN * Math.exp(r * i / (MASTER_PTS - 1));
+  return a;
+})();
+const cal = {
+  ref: null,        // 現在の基準 {freqs, db}
+  refName: "",
+  samples: [],      // [{name, freqs, corr(平均0), rLo, rHi}]
+  master: null,     // {freqs, db, sd}
+  enabled: false
+};
 
 function parseRefText(text){
   const fs = [], ds = [];
@@ -977,83 +991,238 @@ $("btnRefCsv").addEventListener("click", () => {
   a.click();
 });
 
-$("btnMakeCal").addEventListener("click", () => {
+function addCalSample(){
   if(!cal.ref || !state.result) return;
   const r = state.result;
-  const raw = r.rawDb || r.db;
-  const rawCurve = { freqs: r.freqs, db: raw };
-  const refOff  = interpDb(cal.ref, 1000);
-  const measOff = interpDb(rawCurve, 1000);
+  const raw = r.rawDb || r.db;            // 補正前の生測定(複数回平均済み)
   const pts = r.freqs.length;
   const corr = new Float64Array(pts);
   const lo = cal.ref.freqs[0], hi = cal.ref.freqs[cal.ref.freqs.length - 1];
   let firstIn = -1, lastIn = -1;
   for(let i = 0; i < pts; i++){
     const f = r.freqs[i];
-    let v = (interpDb(cal.ref, f) - refOff) - (raw[i] - measOff);
-    corr[i] = Math.max(-24, Math.min(24, v));
+    corr[i] = interpDb(cal.ref, f) - raw[i];   // C(f) = 基準 - 測定 ≈ -H(f) + 定数
     if(f >= lo && f <= hi){ if(firstIn < 0) firstIn = i; lastIn = i; }
   }
-  // 基準データの範囲外は端の値を保持(でっち上げ防止)
-  if(firstIn >= 0){
-    for(let i = 0; i < firstIn; i++) corr[i] = corr[firstIn];
-    for(let i = lastIn + 1; i < pts; i++) corr[i] = corr[lastIn];
-  }
-  // 1/3oct平滑: 鋭いノッチは配置依存なので補正カーブには乗せない
+  if(firstIn < 0){ setMsg("基準データと測定の周波数範囲が重なっていません", true); return; }
+  // 基準データ範囲外は端値保持(でっち上げ防止)
+  for(let i = 0; i < firstIn; i++) corr[i] = corr[firstIn];
+  for(let i = lastIn + 1; i < pts; i++) corr[i] = corr[lastIn];
+  // 1/3oct平滑: 配置依存の鋭いノッチは補正に乗せない
   const lin = new Float64Array(pts);
   for(let i = 0; i < pts; i++) lin[i] = Math.pow(10, corr[i] / 20);
   const linS = smoothCurve(lin, pts, r.fmin, r.fmax, 3);
-  const corrS = new Float64Array(pts);
-  for(let i = 0; i < pts; i++) corrS[i] = dB(linS[i]);
+  for(let i = 0; i < pts; i++) corr[i] = Math.max(-30, Math.min(30, dB(linS[i])));
+  // 共通グリッドに補間して保存
+  const tmp = { freqs: r.freqs, db: corr };
+  const cg = new Float64Array(MASTER_PTS);
+  for(let i = 0; i < MASTER_PTS; i++) cg[i] = interpDb(tmp, MASTER_FREQS[i]);
+  // オフセット除去(全帯域平均=0に)
+  let mean = 0; for(let i = 0; i < MASTER_PTS; i++) mean += cg[i]; mean /= MASTER_PTS;
+  for(let i = 0; i < MASTER_PTS; i++) cg[i] -= mean;
 
-  cal.curve = { freqs: Float64Array.from(r.freqs), db: corrS };
+  cal.samples.push({
+    name: cal.refName || ("サンプル" + (cal.samples.length + 1)),
+    freqs: Float64Array.from(MASTER_FREQS),
+    corr: cg, rLo: lo, rHi: hi
+  });
+  saveCal(); renderSampleList(); updateCalUi(); drawCalChart();
+  setMsg("校正サンプル追加: " + (cal.samples[cal.samples.length - 1].name) + " (計" + cal.samples.length + "サンプル)");
+}
+
+function buildMaster(){
+  const M = cal.samples.length;
+  if(!M){ return; }
+  const avg = new Float64Array(MASTER_PTS), sd = new Float64Array(MASTER_PTS);
+  for(let i = 0; i < MASTER_PTS; i++){
+    let s = 0;
+    for(const smp of cal.samples) s += smp.corr[i];
+    avg[i] = s / M;
+    let ss = 0;
+    for(const smp of cal.samples){ const d = smp.corr[i] - avg[i]; ss += d * d; }
+    sd[i] = Math.sqrt(ss / M);
+  }
+  // 念のため平均0へ再正規化
+  let mean = 0; for(let i = 0; i < MASTER_PTS; i++) mean += avg[i]; mean /= MASTER_PTS;
+  for(let i = 0; i < MASTER_PTS; i++) avg[i] -= mean;
+
+  cal.master = { freqs: Float64Array.from(MASTER_FREQS), db: avg, sd };
   cal.enabled = true;
-  saveCal(); updateCalUi(); recomputeCurves(); drawChart();
-  setMsg("補正カーブを作成・適用(基準: " + cal.refName + ")。治具を動かさず次の測定へ");
-});
+  saveCal(); updateCalUi(); drawCalChart();
+  if(state.result) recomputeCurves();
+  drawChart();
+  let meanSd = 0; for(let i = 0; i < MASTER_PTS; i++) meanSd += sd[i]; meanSd /= MASTER_PTS;
+  setMsg("マスター補正を生成・適用(" + M + "サンプル平均, 平均ばらつき±" + meanSd.toFixed(1) + "dB)");
+}
+
+function renderSampleList(){
+  const box = $("sampleList");
+  box.innerHTML = "";
+  if(!cal.samples.length){
+    box.innerHTML = '<div style="font-size:12px;color:var(--ink-dim);padding:4px 2px;">まだサンプルがありません。基準を選び、そのイヤホンを測定してから追加してください。</div>';
+    return;
+  }
+  cal.samples.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.className = "saveRow";
+    const sw = document.createElement("div");
+    sw.className = "swatch"; sw.style.background = PALETTE[i % PALETTE.length];
+    row.appendChild(sw);
+    const nm = document.createElement("div");
+    nm.className = "name";
+    nm.textContent = s.name;
+    nm.style.cursor = "default";
+    row.appendChild(nm);
+    const rng = document.createElement("div");
+    rng.style.cssText = "font-family:var(--mono);font-size:10px;color:var(--ink-dim);flex:none;margin-right:4px;";
+    rng.textContent = Math.round(s.rLo) + "–" + (s.rHi >= 1000 ? (s.rHi/1000).toFixed(0)+"k" : Math.round(s.rHi));
+    row.appendChild(rng);
+    const del = document.createElement("button");
+    del.className = "miniBtn del";
+    del.textContent = "✕";
+    del.onclick = () => {
+      cal.samples.splice(i, 1);
+      saveCal(); renderSampleList(); updateCalUi(); drawCalChart();
+    };
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+const calChart = $("calChart");
+function drawCalChart(){
+  if(!calChart) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = calChart.clientWidth, H = 150;
+  calChart.width = W * dpr; calChart.height = H * dpr;
+  const g = calChart.getContext("2d");
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, W, H);
+  const padL = 30, padR = 8, padT = 8, padB = 18;
+  const pw = W - padL - padR, ph = H - padT - padB;
+  const fx = f => padL + Math.log(f / MASTER_FMIN) / Math.log(MASTER_FMAX / MASTER_FMIN) * pw;
+
+  let yMax = 12;
+  if(cal.samples.length || cal.master){
+    let hi = 6;
+    for(const s of cal.samples) for(const v of s.corr) hi = Math.max(hi, Math.abs(v));
+    if(cal.master) for(let i = 0; i < MASTER_PTS; i++) hi = Math.max(hi, Math.abs(cal.master.db[i]) + cal.master.sd[i]);
+    yMax = Math.ceil(hi / 3) * 3;
+  }
+  const yMin = -yMax;
+  const fy = v => padT + (yMax - v) / (yMax - yMin) * ph;
+
+  g.font = "9px " + getCss("--mono");
+  g.strokeStyle = "#1B2531"; g.fillStyle = "#5C6B7E"; g.lineWidth = 1;
+  for(const f of [20,50,100,200,500,1000,2000,5000,10000,20000]){
+    const x = fx(f);
+    g.beginPath(); g.moveTo(x, padT); g.lineTo(x, padT + ph); g.stroke();
+    const lbl = f >= 1000 ? (f/1000)+"k" : ""+f;
+    g.fillText(lbl, x - g.measureText(lbl).width/2, H - 6);
+  }
+  for(const v of [yMin, yMin/2, 0, yMax/2, yMax]){
+    const y = fy(v);
+    g.strokeStyle = (v === 0) ? "#2E3D4E" : "#1B2531";
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(padL + pw, y); g.stroke();
+    g.fillStyle = "#5C6B7E"; g.fillText(v.toFixed(0), 4, y + 3);
+  }
+  g.strokeStyle = "#2A3645"; g.strokeRect(padL, padT, pw, ph);
+
+  if(!cal.samples.length && !cal.master){
+    g.fillStyle = "#46566A"; g.font = "11px " + getCss("--sans");
+    g.fillText("補正カーブのプレビュー", padL + 10, padT + ph/2);
+    return;
+  }
+
+  // 個別サンプル(細線)
+  cal.samples.forEach((s, i) => {
+    g.beginPath(); g.strokeStyle = PALETTE[i % PALETTE.length] + "66"; g.lineWidth = 1;
+    let st = false;
+    for(let k = 0; k < s.freqs.length; k++){
+      const x = fx(s.freqs[k]), y = Math.max(padT, Math.min(padT+ph, fy(s.corr[k])));
+      st ? g.lineTo(x, y) : (g.moveTo(x, y), st = true);
+    }
+    g.stroke();
+  });
+
+  // マスター ±1σ バンド + 平均線
+  if(cal.master){
+    const m = cal.master;
+    g.fillStyle = "rgba(86,200,172,0.15)";
+    g.beginPath();
+    for(let i = 0; i < MASTER_PTS; i++){ const x = fx(m.freqs[i]), y = fy(Math.min(yMax, m.db[i] + m.sd[i])); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    for(let i = MASTER_PTS - 1; i >= 0; i--){ const x = fx(m.freqs[i]), y = fy(Math.max(yMin, m.db[i] - m.sd[i])); g.lineTo(x, y); }
+    g.closePath(); g.fill();
+    g.beginPath(); g.strokeStyle = getCss("--green"); g.lineWidth = 2;
+    for(let i = 0; i < MASTER_PTS; i++){ const x = fx(m.freqs[i]), y = fy(m.db[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke();
+  }
+}
+
+$("btnAddSample").addEventListener("click", addCalSample);
+$("btnBuildMaster").addEventListener("click", buildMaster);
 
 $("btnCalToggle").addEventListener("click", () => {
   cal.enabled = !cal.enabled;
-  saveCal(); updateCalUi(); recomputeCurves(); drawChart();
+  saveCal(); updateCalUi();
+  if(state.result) recomputeCurves();
+  drawChart();
 });
-$("btnCalClear").addEventListener("click", () => {
-  cal.curve = null; cal.enabled = false;
-  try{ localStorage.removeItem("frCal1"); }catch(e){}
-  updateCalUi(); recomputeCurves(); drawChart();
+
+$("btnCalCsv").addEventListener("click", () => {
+  if(!cal.master) return;
+  let csv = "freq_hz,correction_db,stdev_db\n";
+  for(let i = 0; i < cal.master.freqs.length; i++){
+    csv += cal.master.freqs[i].toFixed(2) + "," + cal.master.db[i].toFixed(3) + "," + cal.master.sd[i].toFixed(3) + "\n";
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "calibration_master_" + cal.samples.length + "samples.csv";
+  a.click();
 });
 
 function updateCalUi(){
-  $("btnMakeCal").disabled = !(cal.ref && state.result);
-  $("btnCalToggle").disabled = !cal.curve;
-  $("btnCalClear").disabled = !cal.curve;
   $("btnRefCsv").disabled = !cal.ref;
+  $("btnAddSample").disabled = !(cal.ref && state.result);
+  $("btnBuildMaster").disabled = !cal.samples.length;
+  $("btnCalToggle").disabled = !cal.master;
+  $("btnCalCsv").disabled = !cal.master;
   $("btnCalToggle").textContent = "補正 " + (cal.enabled ? "ON" : "OFF");
   $("btnCalToggle").classList.toggle("active", cal.enabled);
-  let s = "基準データ: " + (cal.ref ? cal.refName : (cal.curve ? "(保存済み補正)" : "なし"));
-  s += " / 補正: " + (cal.curve ? (cal.enabled ? "適用中" : "OFF") : "未作成");
+  $("refStatus").textContent = "基準データ: " + (cal.ref ? cal.refName : "なし");
+  let s;
+  if(cal.master){
+    let meanSd = 0; for(let i = 0; i < MASTER_PTS; i++) meanSd += cal.master.sd[i]; meanSd /= MASTER_PTS;
+    s = "補正: " + cal.samples.length + "サンプル平均 / 平均ばらつき±" + meanSd.toFixed(1) + "dB / " + (cal.enabled ? "適用中" : "OFF");
+  }else{
+    s = "補正: 未生成(サンプル " + cal.samples.length + "件)";
+  }
   $("calStatus").textContent = s;
 }
 
 function saveCal(){
   try{
-    if(cal.curve){
-      localStorage.setItem("frCal1", JSON.stringify({
-        f: Array.from(cal.curve.freqs), d: Array.from(cal.curve.db),
-        en: cal.enabled, n: cal.refName
-      }));
-    }
+    localStorage.setItem("frCal2", JSON.stringify({
+      samples: cal.samples.map(s => ({ n: s.name, c: Array.from(s.corr).map(v => Math.round(v*100)/100), lo: s.rLo, hi: s.rHi })),
+      master: cal.master ? { d: Array.from(cal.master.db).map(v => Math.round(v*100)/100), sd: Array.from(cal.master.sd).map(v => Math.round(v*100)/100) } : null,
+      en: cal.enabled
+    }));
   }catch(e){}
 }
 function loadCal(){
   try{
-    const s = localStorage.getItem("frCal1");
+    const s = localStorage.getItem("frCal2");
     if(s){
       const o = JSON.parse(s);
-      cal.curve = { freqs: Float64Array.from(o.f), db: Float64Array.from(o.d) };
-      cal.enabled = !!o.en; cal.refName = o.n || "";
+      cal.samples = (o.samples || []).map(x => ({
+        name: x.n, freqs: Float64Array.from(MASTER_FREQS),
+        corr: Float64Array.from(x.c), rLo: x.lo, rHi: x.hi
+      }));
+      if(o.master) cal.master = { freqs: Float64Array.from(MASTER_FREQS), db: Float64Array.from(o.master.d), sd: Float64Array.from(o.master.sd) };
+      cal.enabled = !!o.en;
     }
   }catch(e){}
-  updateCalUi();
+  renderSampleList(); updateCalUi(); drawCalChart();
 }
 
 /* ================= 描画 ================= */
@@ -1170,7 +1339,7 @@ function drawChart(cursorX){
   }
   g.strokeStyle = "#2A3645";
   g.strokeRect(padL, padT, pw, ph);
-  if(cal.curve && cal.enabled){
+  if(cal.master && cal.enabled){
     g.fillStyle = getCss("--accent"); g.font = "10px " + getCss("--mono");
     g.fillText("CAL", padL + 6, padT + 13);
   }
@@ -1300,7 +1469,7 @@ chart.addEventListener("touchmove", cursorEv, { passive: false });
 chart.addEventListener("mouseleave", () => drawChart());
 chart.addEventListener("touchend", () => drawChart());
 
-window.addEventListener("resize", () => drawChart());
+window.addEventListener("resize", () => { drawChart(); drawCalChart(); });
 renderSaveList();
 loadCal();
 $("peqdbBox").style.display = "";
